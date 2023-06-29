@@ -4,7 +4,6 @@ import Foundation
 struct ForecastViewModel {
     let forecast: Forecast.Daily
     var system: Int
-    
     private static var dateFormatter: DateFormatter {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "E, MMM, d"
@@ -34,6 +33,7 @@ struct ForecastViewModel {
     var day: String {
         return Self.dateFormatter.string(from: forecast.dt)
     }
+    
     
     var overview: String {
         forecast.weather[0].description.capitalized
