@@ -2,189 +2,197 @@
 import SDWebImageSwiftUI
 import SwiftUI
 
-//struct ContentView: View {
-//    @StateObject  var forecastListVM = ForecastListViewModel()
-//    var body: some View {
-//        ZStack {
-//            NavigationView {
-//                VStack {
-//                    Picker(selection: $forecastListVM.system, label: Text("System")) {
-//                        Text("°C").tag(0)
-//                        Text("°F").tag(1)
-//                    }
-//                    .pickerStyle(SegmentedPickerStyle())
-//                    .frame(width: 100)
-//                    .padding(.vertical)
-//                    HStack {
-//                        TextField("Enter Location", text: $forecastListVM.location,
-//                                  onCommit: {
-//                                    forecastListVM.getWeatherForecast()
-//                                  })
-//                            .textFieldStyle(RoundedBorderTextFieldStyle())
-//                            .overlay (
-//                                Button(action: {
-//                                    forecastListVM.location = ""
-//                                    forecastListVM.getWeatherForecast()
-//                                }) {
-//                                    Image(systemName: "xmark.circle")
-//                                        .foregroundColor(.gray)
-//                                }
-//                                .padding(.horizontal),
-//                                alignment: .trailing
-//                            )
-//                        Button {
-//                            forecastListVM.getWeatherForecast()
-//                        } label: {
-//                            Image(systemName: "magnifyingglass.circle.fill")
-//                                .font(.title3)
-//                        }
-//                    }
-//                    List(forecastListVM.forecasts, id: \.day) { day in
-//                            VStack(alignment: .leading) {
-//                                Text(day.day)
-//                                    .fontWeight(.bold)
-//                                HStack(alignment: .center) {
-//                                    WebImage(url: day.weatherIconURL)
-//                                        .resizable()
-//                                        .placeholder {
-//                                            Image(systemName: "hourglass")
-//                                        }
-//                                        .scaledToFit()
-//                                        .frame(width: 75)
-//                                    VStack(alignment: .leading) {
-//                                        Text(day.overview)
-//                                            .font(.title2)
-//                                        HStack {
-//                                            Text(day.high)
-//                                            Text(day.low)
-//                                        }
-//                                        HStack {
-//                                            Text(day.clouds)
-//                                            Text(day.pop)
-//                                        }
-//                                        Text(day.humidity)
-//                                    }
-//                                }
-//                            }
-//                        }
-//                        .listStyle(PlainListStyle())
-//                }
-//                .padding(.horizontal)
-//                .navigationTitle("Mobile Weather")
-//                .alert(item: $forecastListVM.appError) { appAlert in
-//                    Alert(title: Text("Error"),
-//                          message: Text("""
-//                            \(appAlert.errorString)
-//                            Please try again later!
-//                            """
-//                            )
-//
-//                    )
-//                }
-//            }
-//            if forecastListVM.isLoading {
-//                ZStack {
-//                    Color(.white)
-//                        .opacity(0.3)
-//                        .ignoresSafeArea()
-//                    ProgressView("Fetching Weather")
-//                        .padding()
-//                        .background(
-//                            RoundedRectangle(cornerRadius: 10)
-//                                .fill(Color(.systemBackground))
-//                        )
-//                        .shadow(radius: /*@START_MENU_TOKEN@*/10/*@END_MENU_TOKEN@*/ )
-//                }
-//            }
-//        }
-//    }
-//}
-
 
 struct ContentView: View {
+    @State private var maxCities = 5 // Declare a @State variable
+    
     var body: some View {
         TabView {
-            MainApplicationView()
+            MainApplicationView(maxCities: $maxCities) // Pass maxCities as a binding
                 .tabItem {
                     Label("Main", systemImage: "house")
                 }
             
-            SettingsView()
+            SettingsView(maxCities: $maxCities) // Pass maxCities as a binding
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }
         }
     }
 }
-
-struct City: Identifiable {
+struct City: Identifiable , Equatable {
     let id = UUID()
     let name: String
+    static func == (lhs: City, rhs: City) -> Bool {
+        return lhs.id == rhs.id
+    }
 }
 
+enum SortOption {
+    case name
+    case highTemperature
+    case lowTemperature
+}
+
+
 struct MainApplicationView: View {
-    let popularCities = [City(name: "London"), City(name: "Paris"), City(name: "New York"), City(name: "Tokyo"), City(name: "Sydney")]
-    
+    @State private var popularCities: [City] = [City(name: "London"), City(name: "Paris"), City(name: "New York"), City(name: "Tokyo"), City(name: "Sydney")]
+    @Binding var maxCities: Int // Add maxCities as a binding parameter
+
     @StateObject private var weatherService = WeatherService()
+    @StateObject private var cityService = CityService()
     @State private var selectedCity: City? = nil
-    
+    @State private var isAddingCity = false
+    @State private var newCityName = ""
+    @State private var sortOption: SortOption = .name
     var body: some View {
         NavigationView {
             VStack {
+                Picker("Sort by", selection: $sortOption) {
+                    Text("Name").tag(SortOption.name)
+                    Text("High Temperature").tag(SortOption.highTemperature)
+                    Text("Low Temperature").tag(SortOption.lowTemperature)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding()
+                
                 Text("Popular Cities")
                     .font(.title)
                     .padding(.top)
-                
-                List(popularCities) { city in
-                    if let forecast = weatherService.forecasts[city.name] {
-                        Button(action: {
-                            selectedCity = city
-                        }) {
-                            VStack(alignment: .leading) {
-                                Text(city.name)
-                                    .fontWeight(.bold)
-                                HStack(alignment: .center) {
-                                    WebImage(url: forecast.weatherIconURL)
-                                        .resizable()
-                                        .placeholder {
-                                            Image(systemName: "hourglass")
+
+                List {
+                    ForEach(popularCities.sorted(by: getSortPredicate())) { city in
+                        if let forecast = weatherService.forecasts[city.name] {
+                            NavigationLink(destination: WeatherDetailView(city: city.name)) {
+                                VStack(alignment: .leading) {
+                                    Text(city.name)
+                                        .fontWeight(.bold)
+                                    HStack(alignment: .center) {
+                                        WebImage(url: forecast.weatherIconURL)
+                                            .resizable()
+                                            .placeholder {
+                                                Image(systemName: "hourglass")
+                                            }
+                                            .scaledToFit()
+                                            .frame(width: 75)
+                                        VStack(alignment: .leading) {
+                                            Text(forecast.overview)
+                                                .font(.title2)
+                                            HStack {
+                                                Text(forecast.high)
+                                                Text(forecast.low)
+                                            }
+                                            HStack {
+                                                Text(forecast.clouds)
+                                                Text(forecast.pop)
+                                            }
+                                            Text(forecast.humidity)
                                         }
-                                        .scaledToFit()
-                                        .frame(width: 75)
-                                    VStack(alignment: .leading) {
-                                        Text(forecast.overview)
-                                            .font(.title2)
-                                        HStack {
-                                            Text(forecast.high)
-                                            Text(forecast.low)
-                                        }
-                                        HStack {
-                                            Text(forecast.clouds)
-                                            Text(forecast.pop)
-                                        }
-                                        Text(forecast.humidity)
                                     }
                                 }
                             }
                         }
                     }
+                    .onDelete(perform: removeCity)
                 }
                 .listStyle(PlainListStyle())
-                .sheet(item: $selectedCity, onDismiss: {
-                    // Code to perform when the sheet is dismissed
-                }) { city in
-                    if let forecast = weatherService.forecasts[city.name] {
-                        WeatherDetailView(city: city.name)
-                    }
-                }
+                .navigationBarItems(trailing: Button(action: {
+                    isAddingCity = true
+                }) {
+                    Image(systemName: "plus")
+                })
             }
             .onAppear {
                 weatherService.getWeathersByCitiesList(cities: popularCities.map { $0.name })
+                
             }
             .navigationTitle("Weather")
+            .sheet(isPresented: $isAddingCity, content: {
+                addCitySheet
+            })
+        }
+        .onChange(of: maxCities) { newValue in
+            if popularCities.count > newValue {
+                popularCities = Array(popularCities.prefix(newValue))
+            }
+        }
+    }
+    
+    func removeCity(at offsets: IndexSet) {
+        popularCities.remove(atOffsets: offsets)
+    }
+    
+    var addCitySheet: some View {
+        NavigationView {
+            VStack {
+                TextField("Enter city name", text: $newCityName)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding()
+                
+                Spacer()
+            }
+            .navigationTitle("Add City")
+            .navigationBarItems(
+                leading: Button(action: {
+                    isAddingCity = false
+                }) {
+                    Text("Cancel")
+                },
+                trailing: Button(action: {
+                    addCity()
+                    isAddingCity = false
+                    newCityName = ""
+                }) {
+                    Text("Add")
+                }
+                .disabled(newCityName.isEmpty)
+            )
+        }
+    }
+    
+    func addCity() {
+        let trimmedCityName = newCityName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let city = City(name: trimmedCityName)
+        
+        if popularCities.count >= maxCities {
+            // Show error message when maxCities is reached
+            // Modify this part according to how you want to display the error message
+            print("Error: Max number of cities reached")
+        } else {
+            popularCities.append(city)
+            weatherService.getWeathersByCitiesList(cities: popularCities.map { $0.name })
+        }
+        
+        // Reset the new city name field
+        newCityName = ""
+    }
+
+    
+    func getSortPredicate() -> (City, City) -> Bool {
+        switch sortOption {
+        case .name:
+            return { $0.name < $1.name }
+        case .highTemperature:
+            return { city1, city2 in
+                let forecast1 = weatherService.forecasts[city1.name]
+                let forecast2 = weatherService.forecasts[city2.name]
+                return forecast1?.high ?? "" < forecast2?.high ?? ""
+            }
+        case .lowTemperature:
+            return { city1, city2 in
+                let forecast1 = weatherService.forecasts[city1.name]
+                let forecast2 = weatherService.forecasts[city2.name]
+                return forecast1?.low ?? "" < forecast2?.low ?? ""
+            }
         }
     }
 }
+
+
+
+
+
+
 
 
 
@@ -249,13 +257,47 @@ struct WeatherDetailView: View {
 
 
 
-
 struct SettingsView: View {
+    @AppStorage("isDarkMode") private var isDarkMode = false
+    @Binding var maxCities: Int // Add maxCities as a binding parameter
+    
     var body: some View {
-        // Your settings content goes here
-        Text("Settings")
+        NavigationView {
+            Form {
+                Section(header: Text("Appearance")) {
+                    Toggle("Dark Mode", isOn: $isDarkMode)
+                }
+                
+                Section(header: Text("Maximum Cities")) {
+                    Stepper(value: $maxCities, in: 1...10) {
+                        Text("Maximum Cities: \(maxCities)")
+                    }
+                }
+                
+                Section {
+                    Button(action: {
+                        exit(0) // Exit the application
+                    }) {
+                        Text("Logout")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .foregroundColor(.white)
+                            .background(Color.red)
+                            .cornerRadius(10)
+                    }
+                }
+            }
+            .preferredColorScheme(isDarkMode ? .dark : .light)
+            .navigationTitle("Settings")
+        }
     }
 }
+
+
+
+
+
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
